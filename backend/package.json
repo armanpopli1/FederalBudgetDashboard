@@ -1,0 +1,16 @@
+{
+  "name": "federal-budget-dashboard-backend",
+  "version": "1.0.0",
+  "description": "AWS Lambda backend for Federal Budget Dashboard",
+  "devDependencies": {
+    "serverless": "^3.38.0",
+    "serverless-python-requirements": "^6.0.0"
+  },
+  "scripts": {
+    "deploy": "serverless deploy",
+    "deploy:dev": "serverless deploy --stage dev",
+    "remove": "serverless remove",
+    "info": "serverless info",
+    "logs": "serverless logs -f api"
+  }
+} 
