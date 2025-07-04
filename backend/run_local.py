@@ -17,17 +17,20 @@ def main():
     print("🚀 Starting Federal Budget Dashboard API (Local Development)")
     print("=" * 60)
     
-    # Check required environment variables
-    database_url = os.getenv("DATABASE_URL")
-    if not database_url:
-        print("❌ ERROR: DATABASE_URL environment variable not set")
-        print("Please set your database connection string:")
-        print("export DATABASE_URL='postgresql://user:password@host:5432/dbname'")
-        print()
-        print("Or create a .env file with your configuration")
+    # Import and test database connection
+    try:
+        from app.database import check_database_connection
+        if check_database_connection():
+            print("✅ Database connection successful")
+        else:
+            print("❌ Database connection failed")
+            print("Please check your .env file configuration")
+            return
+    except Exception as e:
+        print(f"❌ Database connection error: {str(e)}")
+        print("Please check your .env file configuration")
         return
     
-    print(f"Database: {database_url.split('@')[1] if '@' in database_url else 'Not configured'}")
     print(f"CORS Origins: {os.getenv('CORS_ORIGINS', 'Default (localhost:3000)')}")
     print()
     

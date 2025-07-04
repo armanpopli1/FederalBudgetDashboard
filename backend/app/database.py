@@ -1,5 +1,5 @@
 import os
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import QueuePool
@@ -74,10 +74,7 @@ def check_database_connection():
     """Check if database connection is working"""
     try:
         with engine.connect() as connection:
-            if "postgresql" in database_url:
-                result = connection.execute("SELECT 1")
-            else:
-                result = connection.execute("SELECT 1")
+            result = connection.execute(text("SELECT 1"))
             return True
     except Exception as e:
         print(f"❌ Database connection failed: {str(e)}")
