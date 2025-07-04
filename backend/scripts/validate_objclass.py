@@ -25,13 +25,13 @@ def validate_csv_structure(file_path: str) -> Tuple[bool, List[str]]:
         df = pd.read_csv(file_path)
         print(f"📄 Loaded CSV with {len(df)} rows and {len(df.columns)} columns")
         
-        # Check for required columns
+        # Check for required columns (actual OBJCLASS column names)
         required_columns = [
-            'Agency Code', 'Agency Title',
-            'Bureau Code', 'Bureau Title',  
-            'Account Code', 'Account Title',
-            'Function Code', 'Function Title',
-            'Object Class Code', 'Object Class Title'
+            'OMB Agency Code', 'Agency Title',
+            'OMB Bureau Code', 'Bureau Title',  
+            'OMB Account', 'Account _Title',
+            'Default Budget Function', 'Default Budget Subfunction',
+            'OB Class Code', 'OB Class'
         ]
         
         missing_columns = [col for col in required_columns if col not in df.columns]
@@ -53,7 +53,7 @@ def validate_csv_structure(file_path: str) -> Tuple[bool, List[str]]:
                     issues.append(f"Column '{col}' has {empty_count} empty values")
         
         # Check data types and formats
-        for col in ['Agency Code', 'Bureau Code', 'Function Code', 'Object Class Code']:
+        for col in ['OMB Agency Code', 'OMB Bureau Code', 'Default Budget Function', 'OB Class Code']:
             if col in df.columns:
                 # Check if codes are reasonable (not too long, not empty)
                 max_len = df[col].astype(str).str.len().max()
@@ -62,11 +62,11 @@ def validate_csv_structure(file_path: str) -> Tuple[bool, List[str]]:
         
         # Sample data analysis
         print("\n📊 Sample Data Analysis:")
-        print(f"   Unique agencies: {df['Agency Code'].nunique() if 'Agency Code' in df.columns else 'N/A'}")
-        print(f"   Unique bureaus: {df['Bureau Code'].nunique() if 'Bureau Code' in df.columns else 'N/A'}")
-        print(f"   Unique accounts: {df['Account Code'].nunique() if 'Account Code' in df.columns else 'N/A'}")
-        print(f"   Unique functions: {df['Function Code'].nunique() if 'Function Code' in df.columns else 'N/A'}")
-        print(f"   Unique object classes: {df['Object Class Code'].nunique() if 'Object Class Code' in df.columns else 'N/A'}")
+        print(f"   Unique agencies: {df['OMB Agency Code'].nunique() if 'OMB Agency Code' in df.columns else 'N/A'}")
+        print(f"   Unique bureaus: {df['OMB Bureau Code'].nunique() if 'OMB Bureau Code' in df.columns else 'N/A'}")
+        print(f"   Unique accounts: {df['OMB Account'].nunique() if 'OMB Account' in df.columns else 'N/A'}")
+        print(f"   Unique functions: {df['Default Budget Function'].nunique() if 'Default Budget Function' in df.columns else 'N/A'}")
+        print(f"   Unique object classes: {df['OB Class Code'].nunique() if 'OB Class Code' in df.columns else 'N/A'}")
         
         # Check amount columns for valid data
         for col in amount_columns:
@@ -86,13 +86,13 @@ def show_sample_data(file_path: str, num_rows: int = 5) -> None:
         print(f"\n📋 Sample Data (first {num_rows} rows):")
         print("=" * 80)
         
-        # Show key columns
+        # Show key columns (actual OBJCLASS column names)
         key_columns = [
-            'Agency Code', 'Agency Title',
-            'Bureau Code', 'Bureau Title',
-            'Account Code', 'Account Title',
-            'Function Code', 'Function Title',
-            'Object Class Code', 'Object Class Title'
+            'OMB Agency Code', 'Agency Title',
+            'OMB Bureau Code', 'Bureau Title',
+            'OMB Account', 'Account _Title',
+            'Default Budget Function', 'Default Budget Subfunction',
+            'OB Class Code', 'OB Class'
         ]
         
         available_columns = [col for col in key_columns if col in df.columns]

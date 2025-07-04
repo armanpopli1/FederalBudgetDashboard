@@ -17,6 +17,10 @@ from pathlib import Path
 import sys
 import os
 
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv()
+
 # Add the app directory to the Python path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
@@ -82,19 +86,19 @@ class OBJCLASSParser:
         Validate that the CSV has the expected OBJCLASS structure
         
         Expected columns:
-        - Agency Code, Agency Title
-        - Bureau Code, Bureau Title  
-        - Account Code, Account Title
-        - Function Code, Function Title
-        - Object Class Code, Object Class Title
+        - OMB Agency Code, Agency Title
+        - OMB Bureau Code, Bureau Title  
+        - OMB Account, Account _Title
+        - Default Budget Function, Default Budget Subfunction
+        - OB Class Code, OB Class
         - PY Amount, CY Amount, BY Amount
         """
         required_columns = [
-            'Agency Code', 'Agency Title',
-            'Bureau Code', 'Bureau Title',
-            'Account Code', 'Account Title',
-            'Function Code', 'Function Title',
-            'Object Class Code', 'Object Class Title'
+            'OMB Agency Code', 'Agency Title',
+            'OMB Bureau Code', 'Bureau Title',
+            'OMB Account', 'Account _Title',
+            'Default Budget Function', 'Default Budget Subfunction',
+            'OB Class Code', 'OB Class'
         ]
         
         # Check for amount columns (flexible naming)
@@ -238,6 +242,32 @@ class OBJCLASSParser:
         self.function_cache[code] = function
         return function
         
+    def get_or_create_subfunction(self, function: BudgetFunction, code: str, title: str) -> Optional[BudgetSubfunction]:
+        """Get or create a budget subfunction record"""
+        cache_key = f"{function.code}:{code}"
+        
+        if cache_key in self.subfunction_cache:
+            return self.subfunction_cache[cache_key]
+        
+        subfunction = self.session.query(BudgetSubfunction).filter_by(
+            function_id=function.id,
+            code=code
+        ).first()
+        
+        if not subfunction:
+            subfunction = BudgetSubfunction(
+                function_id=function.id,
+                code=code,
+                title=title.strip(),
+                description=title.strip()
+            )
+            self.session.add(subfunction)
+            self.session.commit()
+            logger.info(f"🎯 Created new subfunction: {code} - {title}")
+            
+        self.subfunction_cache[cache_key] = subfunction
+        return subfunction
+        
     def get_or_create_object_class(self, code: str, title: str) -> Optional[ObjectClass]:
         """Get or create an object class record"""
         if code in self.object_class_cache:
@@ -270,6 +300,29 @@ class OBJCLASSParser:
             if start < end:
                 return title[start:end].strip()
         return None
+        
+    def _parse_function_field(self, field_value: str) -> Tuple[str, str]:
+        """
+        Parse function field in "code - name" format
+        
+        Args:
+            field_value: Field like "800 - General Government" or "801 - Legislative functions"
+            
+        Returns:
+            Tuple of (code, name)
+        """
+        field_value = field_value.strip()
+        
+        # Handle "code - name" format
+        if ' - ' in field_value:
+            parts = field_value.split(' - ', 1)
+            if len(parts) == 2:
+                code = parts[0].strip()
+                name = parts[1].strip()
+                return code, name
+        
+        # Fallback: use entire field as both code and name
+        return field_value, field_value
         
     def process_csv(self) -> bool:
         """
@@ -327,30 +380,31 @@ class OBJCLASSParser:
         try:
             # Get/create dimension records
             agency = self.get_or_create_agency(
-                str(row['Agency Code']).strip(),
+                str(row['OMB Agency Code']).strip(),
                 str(row['Agency Title']).strip()
             )
             
             bureau = self.get_or_create_bureau(
                 agency,
-                str(row['Bureau Code']).strip(),
+                str(row['OMB Bureau Code']).strip(),
                 str(row['Bureau Title']).strip()
             )
             
             account = self.get_or_create_account(
                 bureau,
-                str(row['Account Code']).strip(),
-                str(row['Account Title']).strip()
+                str(row['OMB Account']).strip(),
+                str(row['Account _Title']).strip()
             )
             
-            function = self.get_or_create_function(
-                str(row['Function Code']).strip(),
-                str(row['Function Title']).strip()
-            )
+            function_code, function_name = self._parse_function_field(str(row['Default Budget Function']))
+            function = self.get_or_create_function(function_code, function_name)
+            
+            subfunction_code, subfunction_name = self._parse_function_field(str(row['Default Budget Subfunction']))
+            subfunction = self.get_or_create_subfunction(function, subfunction_code, subfunction_name)
             
             object_class = self.get_or_create_object_class(
-                str(row['Object Class Code']).strip(),
-                str(row['Object Class Title']).strip()
+                str(row['OB Class Code']).strip(),
+                str(row['OB Class']).strip()
             )
             
             # Process amount columns
@@ -367,6 +421,7 @@ class OBJCLASSParser:
                     outlay = Outlay(
                         account_id=account.id,
                         function_id=function.id,
+                        subfunction_id=subfunction.id,
                         object_class_id=object_class.id,
                         fiscal_year=fiscal_year,
                         period=period,
