@@ -2,55 +2,67 @@
 """
 Test database connection script for Federal Budget Dashboard
 
-This script tests the connection to the PostgreSQL RDS instance
+This script tests the connection to the SQLite database
 and verifies basic functionality.
 """
 
 import os
 import sys
-import psycopg2
+import sqlite3
 from urllib.parse import urlparse
 
 def test_connection():
     """Test database connection and basic operations"""
     
-    # Get database URL from environment
+    # Get database URL from environment or use default SQLite
     database_url = os.getenv("DATABASE_URL")
     if not database_url:
-        print("❌ ERROR: DATABASE_URL environment variable not set")
-        print("Example: export DATABASE_URL='postgresql://user:password@host:5432/dbname'")
-        return False
+        # Default SQLite path
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        db_path = os.path.join(current_dir, "..", "backend", "federal_budget.db")
+        db_path = os.path.abspath(db_path)
+        database_url = f"sqlite:///{db_path}"
+        print(f"Using default SQLite database: {db_path}")
     
     try:
         # Parse the database URL
         parsed = urlparse(database_url)
         
         print("🔍 Testing database connection...")
-        print(f"   Host: {parsed.hostname}")
-        print(f"   Port: {parsed.port}")
-        print(f"   Database: {parsed.path[1:]}")  # Remove leading slash
-        print(f"   User: {parsed.username}")
+        if parsed.scheme == "sqlite":
+            db_path = parsed.path
+            print(f"   Database file: {db_path}")
+        else:
+            print(f"   Host: {parsed.hostname}")
+            print(f"   Port: {parsed.port}")
+            print(f"   Database: {parsed.path[1:]}")  # Remove leading slash
+            print(f"   User: {parsed.username}")
         print()
         
         # Test connection
         print("1️⃣  Connecting to database...")
-        conn = psycopg2.connect(database_url)
-        cursor = conn.cursor()
+        if parsed.scheme == "sqlite":
+            conn = sqlite3.connect(parsed.path)
+            cursor = conn.cursor()
+        else:
+            print("❌ Only SQLite is supported in Phase 1")
+            return False
+        
         print("   ✅ Connection successful!")
         
         # Test basic query
         print("2️⃣  Testing basic query...")
-        cursor.execute("SELECT version();")
+        cursor.execute("SELECT sqlite_version();")
         version = cursor.fetchone()[0]
-        print(f"   ✅ PostgreSQL version: {version}")
+        print(f"   ✅ SQLite version: {version}")
         
         # Test database creation permissions
         print("3️⃣  Testing table creation permissions...")
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS connection_test (
-                id SERIAL PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 test_message TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             );
         """)
         conn.commit()
@@ -83,10 +95,10 @@ def test_connection():
         
         print()
         print("🎉 Database connection test PASSED!")
-        print("   Your RDS instance is ready for the Federal Budget Dashboard")
+        print("   Your SQLite database is ready for the Federal Budget Dashboard")
         return True
         
-    except psycopg2.Error as e:
+    except sqlite3.Error as e:
         print(f"❌ Database error: {e}")
         return False
     except Exception as e:
@@ -109,10 +121,10 @@ def main():
         print("   3. Test API: python test_api.py")
     else:
         print("❌ Connection failed. Check:")
-        print("   1. DATABASE_URL environment variable is set correctly")
-        print("   2. RDS instance is running and accessible")
-        print("   3. Security groups allow connections")
-        print("   4. Your local IP has access (if connecting from outside AWS)")
+        print("   1. Database file permissions and path")
+        print("   2. SQLite is properly installed") 
+        print("   3. No file locks or permission issues")
+        print("   4. DATABASE_URL format (if using custom database)")
 
 if __name__ == "__main__":
     main() 

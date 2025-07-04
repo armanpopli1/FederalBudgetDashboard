@@ -2,48 +2,61 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-import boto3
-import json
+from sqlalchemy.pool import QueuePool
 
 # Database configuration
-# For local development, use DATABASE_URL environment variable
-# For AWS Lambda, get credentials from Secrets Manager
-
 def get_database_url():
-    """Get database URL from environment or AWS Secrets Manager"""
+    """Get database URL based on environment"""
     
-    # Try environment variable first (for local development)
+    # Check for custom DATABASE_URL (for production/testing)
     if database_url := os.getenv("DATABASE_URL"):
         return database_url
     
-    # For AWS Lambda, get from Secrets Manager
-    try:
-        secret_name = os.getenv("DB_SECRET_NAME", "federal-budget-db-credentials")
-        region_name = os.getenv("AWS_REGION", "us-east-1")
+    if os.getenv("AWS_LAMBDA_FUNCTION_NAME"):
+        # Running in Lambda - use SQLite for now (until we set up RDS)
+        return "sqlite:////tmp/federal_budget.db"
+    else:
+        # Local development - use local PostgreSQL
+        db_user = os.getenv("DB_USER", "postgres")
+        db_password = os.getenv("DB_PASSWORD", "")
+        db_host = os.getenv("DB_HOST", "localhost")
+        db_port = os.getenv("DB_PORT", "5432")
+        db_name = os.getenv("DB_NAME", "federal_budget")
         
-        session = boto3.session.Session()
-        client = session.client(
-            service_name='secretsmanager',
-            region_name=region_name
-        )
-        
-        secret_response = client.get_secret_value(SecretId=secret_name)
-        secret = json.loads(secret_response['SecretString'])
-        
-        return f"postgresql://{secret['username']}:{secret['password']}@{secret['host']}:{secret['port']}/{secret['dbname']}"
-    
-    except Exception as e:
-        print(f"Error getting database credentials: {e}")
-        raise
+        return f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
 
 # Create database engine
 database_url = get_database_url()
-engine = create_engine(
-    database_url,
-    pool_pre_ping=True,
-    pool_recycle=300,
-    echo=os.getenv("DATABASE_DEBUG", "false").lower() == "true"
-)
+
+# Log database connection (hide password)
+display_url = database_url
+if "postgresql" in database_url and "@" in database_url:
+    # Replace password with *** for display
+    parts = database_url.split("://")[1].split("@")
+    if ":" in parts[0]:
+        user_pass = parts[0].split(":")
+        display_url = f"postgresql://{user_pass[0]}:***@{parts[1]}"
+
+print(f"🔗 Connecting to database: {display_url}")
+
+if "postgresql" in database_url:
+    # PostgreSQL-specific configuration
+    engine = create_engine(
+        database_url,
+        poolclass=QueuePool,
+        pool_size=10,
+        max_overflow=20,
+        pool_pre_ping=True,
+        pool_recycle=3600,
+        echo=os.getenv("DATABASE_DEBUG", "false").lower() == "true"
+    )
+else:
+    # SQLite configuration (for Lambda)
+    engine = create_engine(
+        database_url,
+        connect_args={"check_same_thread": False},
+        echo=os.getenv("DATABASE_DEBUG", "false").lower() == "true"
+    )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -54,4 +67,18 @@ def get_db():
     try:
         yield db
     finally:
-        db.close() 
+        db.close()
+
+# Health check function
+def check_database_connection():
+    """Check if database connection is working"""
+    try:
+        with engine.connect() as connection:
+            if "postgresql" in database_url:
+                result = connection.execute("SELECT 1")
+            else:
+                result = connection.execute("SELECT 1")
+            return True
+    except Exception as e:
+        print(f"❌ Database connection failed: {str(e)}")
+        return False 

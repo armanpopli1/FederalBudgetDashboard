@@ -6,7 +6,7 @@ This script populates the database with:
 2. Sample "Big Beautiful Bill" changes
 3. Bill metadata
 
-Run this after setting up your RDS instance and DATABASE_URL environment variable.
+Uses SQLite for Phase 1 - simple, fast, and cost-effective!
 """
 
 import os
@@ -21,13 +21,19 @@ from sqlalchemy.orm import sessionmaker
 from models import BudgetData, Bill, BBBChange, Base
 
 def get_database_url():
-    """Get database URL from environment"""
-    database_url = os.getenv("DATABASE_URL")
-    if not database_url:
-        print("ERROR: DATABASE_URL environment variable not set")
-        print("Example: export DATABASE_URL='postgresql://user:password@host:5432/dbname'")
-        sys.exit(1)
-    return database_url
+    """Get database URL - defaults to SQLite for Phase 1"""
+    
+    # Check for custom DATABASE_URL (for testing different databases)
+    if database_url := os.getenv("DATABASE_URL"):
+        return database_url
+    
+    # Default: SQLite database file in backend directory
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(current_dir, "..", "federal_budget.db")
+    db_path = os.path.abspath(db_path)
+    
+    print(f"Using SQLite database: {db_path}")
+    return f"sqlite:///{db_path}"
 
 def create_tables(engine):
     """Create all database tables"""
