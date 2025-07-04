@@ -3,7 +3,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Optional, Dict, Any
 from ..database import get_db
-from ..models.budget import BudgetData
+from ..models.outlays import Outlay
+from ..models.dimensions import Agency, Bureau, Account, BudgetFunction, BudgetSubfunction, ObjectClass
 from ..models.bill import Bill, BBBChange
 
 router = APIRouter()
@@ -12,14 +13,14 @@ router = APIRouter()
 async def compare_budget_with_bill(
     bill_id: str = Query(..., description="Bill identifier to compare against (e.g., 'bbb')"),
     fiscal_year: Optional[int] = Query(None, description="Fiscal year (defaults to latest)"),
-    data_type: Optional[str] = Query("outlays", description="outlays or budget_authority"),
+    period: Optional[str] = Query("BY", description="Period: PY, CY, or BY"),
     db: Session = Depends(get_db)
 ):
     """
-    Compare current federal budget with proposed bill changes
+    Compare current federal budget with proposed bill changes using real budget data
     
     Returns:
-    - Current budget totals by category
+    - Current budget totals by function (aggregated from real data)
     - Proposed changes from the bill
     - New totals after changes
     - Percentage changes
@@ -31,16 +32,24 @@ async def compare_budget_with_bill(
         if not bill:
             raise HTTPException(status_code=404, detail=f"Bill '{bill_id}' not found")
         
-        # Get current budget data
-        budget_query = db.query(BudgetData).filter(BudgetData.data_type == data_type)
+        # Get current budget data aggregated by function from real Outlay data
+        budget_query = db.query(
+            BudgetFunction.title.label('category'),
+            BudgetFunction.code.label('function_code'),
+            func.sum(Outlay.amount).label('total_amount')
+        ).join(
+            BudgetFunction, Outlay.function_id == BudgetFunction.id
+        ).filter(
+            Outlay.period == period
+        )
         
         # Get latest fiscal year if not specified
         if fiscal_year is None:
-            latest_year = db.query(func.max(BudgetData.fiscal_year)).scalar()
+            latest_year = db.query(func.max(Outlay.fiscal_year)).scalar()
             fiscal_year = latest_year
         
-        budget_query = budget_query.filter(BudgetData.fiscal_year == fiscal_year)
-        budget_items = budget_query.all()
+        budget_query = budget_query.filter(Outlay.fiscal_year == fiscal_year)
+        budget_results = budget_query.group_by(BudgetFunction.title, BudgetFunction.code).all()
         
         # Get bill changes
         bill_changes = db.query(BBBChange).filter(BBBChange.bill_id == bill.id).all()
@@ -49,11 +58,11 @@ async def compare_budget_with_bill(
         current_budget = {}
         total_current = 0
         
-        for item in budget_items:
-            if item.category not in current_budget:
-                current_budget[item.category] = 0
-            current_budget[item.category] += item.amount
-            total_current += item.amount
+        for result in budget_results:
+            category = result.category
+            amount = result.total_amount or 0
+            current_budget[category] = amount
+            total_current += amount
         
         # Aggregate changes by category
         changes_by_category = {}
@@ -101,7 +110,7 @@ async def compare_budget_with_bill(
         return {
             "bill": bill.to_dict(),
             "fiscal_year": fiscal_year,
-            "data_type": data_type,
+            "period": period,
             "summary": {
                 "current_total": total_current,
                 "total_changes": total_changes,
@@ -122,10 +131,11 @@ async def compare_budget_with_bill(
 async def get_comparison_summary(
     bill_id: str = Query(..., description="Bill identifier"),
     fiscal_year: Optional[int] = Query(None, description="Fiscal year"),
+    period: Optional[str] = Query("BY", description="Period: PY, CY, or BY"),
     db: Session = Depends(get_db)
 ):
     """
-    Get high-level summary of budget vs bill comparison
+    Get high-level summary of budget vs bill comparison using real budget data
     
     Returns key metrics without detailed breakdowns
     """
@@ -138,12 +148,12 @@ async def get_comparison_summary(
         
         # Get fiscal year
         if fiscal_year is None:
-            fiscal_year = db.query(func.max(BudgetData.fiscal_year)).scalar()
+            fiscal_year = db.query(func.max(Outlay.fiscal_year)).scalar()
         
-        # Get current total
-        current_total = db.query(func.sum(BudgetData.amount)).filter(
-            BudgetData.fiscal_year == fiscal_year,
-            BudgetData.data_type == "outlays"
+        # Get current total from real Outlay data
+        current_total = db.query(func.sum(Outlay.amount)).filter(
+            Outlay.fiscal_year == fiscal_year,
+            Outlay.period == period
         ).scalar() or 0
         
         # Get total changes
@@ -164,6 +174,7 @@ async def get_comparison_summary(
             "bill_id": bill_id,
             "bill_title": bill.title,
             "fiscal_year": fiscal_year,
+            "period": period,
             "current_total": current_total,
             "total_changes": total_changes,
             "new_total": new_total,

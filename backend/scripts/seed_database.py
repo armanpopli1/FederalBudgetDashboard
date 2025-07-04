@@ -8,7 +8,7 @@ This script populates the database with:
 
 Uses SQLite for Phase 1 - simple, fast, and cost-effective!
 """
-
+ 
 import os
 import sys
 from datetime import datetime
